@@ -163,6 +163,29 @@ try {
     throw 'Quoted desktop keys or a table-header comment were not restored exactly.'
   }
 
+  $nestedConfigPath = Join-Path $temporaryRoot 'config-nested-themes.toml'
+  $nestedBackupPath = Join-Path $temporaryRoot 'config-nested-themes.before.toml'
+  $nestedTables = "[desktop.appearanceDarkChromeTheme]`r`naccent = `"#112233`"`r`n`r`n[desktop.appearanceDarkChromeTheme.fonts]`r`ncode = `"Cascadia Code`"`r`n`r`n[desktop.appearanceDarkChromeTheme.semanticColors]`r`ndiffAdded = `"#234567`"`r`n`r`n[desktop.appearanceLightChromeTheme]`r`naccent = `"#abcdef`"`r`n`r`n[desktop.appearanceLightChromeTheme.fonts]`r`nui = `"Microsoft YaHei UI`"`r`n`r`n[desktop.appearanceLightChromeTheme.semanticColors]`r`ndiffRemoved = `"#fedcba`"`r`n`r`n[`"desktop`".layout]`r`ndensity = `"compact`"`r`n"
+  $nestedOriginal = "[desktop]`r`nappearanceTheme = `"system`"`r`nappearanceLightCodeThemeId = `"github-light`"`r`n`r`n$nestedTables"
+  [System.IO.File]::WriteAllText($nestedConfigPath, $nestedOriginal, $utf8NoBom)
+  Install-DreamSkinBaseTheme -ConfigPath $nestedConfigPath -BackupPath $nestedBackupPath
+  $nestedInstalled = Read-DreamSkinUtf8File -Path $nestedConfigPath
+  $nestedDesktop = Get-DreamSkinDesktopSection -Content $nestedInstalled
+  if (-not $nestedDesktop.Body.Contains('appearanceTheme = "system"') -or
+    -not $nestedDesktop.Body.Contains('appearanceLightCodeThemeId = "codex"')) {
+    throw 'Install did not update scalar appearance settings beside nested desktop theme tables.'
+  }
+  if ([regex]::IsMatch($nestedDesktop.Body, '(?m)^[\t ]*appearanceLightChromeTheme[\t ]*=')) {
+    throw 'Install wrote an inline light chrome theme beside the equivalent nested table.'
+  }
+  if (-not $nestedInstalled.Contains($nestedTables)) {
+    throw 'Install changed native Codex chrome theme or unrelated nested desktop tables.'
+  }
+  Restore-DreamSkinBaseTheme -ConfigPath $nestedConfigPath -BackupPath $nestedBackupPath
+  if ((Read-DreamSkinUtf8File -Path $nestedConfigPath) -cne $nestedOriginal) {
+    throw 'Nested desktop theme tables were not preserved through install and restore.'
+  }
+
   $singleLineArrayPath = Join-Path $temporaryRoot 'config-single-line-array.toml'
   $singleLineArrayBackup = Join-Path $temporaryRoot 'config-single-line-array.before.toml'
   $singleLineArray = "labels = [`"name[1]`", `"#tag]`"]`r`n"
@@ -176,8 +199,10 @@ try {
     'desktop.appearanceTheme = "system"',
     'desktop = { appearanceTheme = "system" }',
     '[[desktop]]',
+    '[[desktop.layout]]',
     '[desktop.appearanceTheme]',
-    '["desktop".layout]',
+    '[desktop.appearanceLightCodeThemeId]',
+    "[desktop]`r`nappearanceLightChromeTheme = { accent = `"#ffffff`" }`r`n`r`n[desktop.appearanceLightChromeTheme]`r`naccent = `"#000000`"",
     '["desk\u0074op".layout]',
     '["desk\u0074op"]',
     "note = `"`"`"fake`r`n[desktop]`r`nappearanceTheme = `"dark`"`r`n`"`"`"",
