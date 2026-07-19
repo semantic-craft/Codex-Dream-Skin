@@ -19,6 +19,67 @@
     "dream-task-banner",
     "dream-task-off",
   ];
+  // Windows Codex exposes native chrome through VS Code and token variables.
+  // Explicit colors{} themes must bridge into those variables; themes without
+  // colors keep the user's native Codex palette untouched.
+  const NATIVE_THEME_PROPERTIES = [
+    "--vscode-foreground", "--vscode-descriptionForeground", "--vscode-disabledForeground",
+    "--vscode-focusBorder", "--vscode-icon-foreground",
+    "--vscode-input-background", "--vscode-input-foreground", "--vscode-input-placeholderForeground",
+    "--vscode-input-border", "--vscode-dropdown-background", "--vscode-dropdown-foreground",
+    "--vscode-dropdown-border", "--vscode-menu-background", "--vscode-menu-foreground",
+    "--vscode-menu-border", "--vscode-editor-background", "--vscode-editor-foreground",
+    "--vscode-panel-background", "--vscode-panel-border", "--vscode-sideBar-background",
+    "--vscode-sideBar-foreground", "--vscode-sideBar-border", "--vscode-terminal-background",
+    "--vscode-terminal-foreground", "--vscode-terminal-border", "--vscode-textLink-foreground",
+    "--vscode-textLink-activeForeground", "--vscode-button-background", "--vscode-button-foreground",
+    "--vscode-button-border", "--vscode-list-hoverBackground", "--vscode-list-activeSelectionBackground",
+    "--vscode-list-activeSelectionForeground", "--vscode-scrollbarSlider-background",
+    "--vscode-scrollbarSlider-hoverBackground", "--vscode-scrollbarSlider-activeBackground",
+    "--color-token-bg-primary", "--color-token-bg-secondary", "--color-token-bg-tertiary",
+    "--color-token-bg-fog", "--color-token-main-surface-primary", "--color-token-side-bar-background",
+    "--color-token-input-background", "--color-token-input-foreground",
+    "--color-token-input-placeholder-foreground", "--color-token-input-border",
+    "--color-token-dropdown-background", "--color-token-dropdown-foreground",
+    "--color-token-menu-background", "--color-token-editor-background",
+    "--color-token-editor-foreground", "--color-token-editor-widget-background",
+    "--color-token-terminal-background", "--color-token-terminal-foreground",
+    "--color-token-terminal-border", "--color-token-checkbox-background",
+    "--color-token-checkbox-foreground", "--color-token-foreground", "--color-token-text-primary",
+    "--color-token-text-secondary", "--color-token-text-tertiary",
+    "--color-token-description-foreground", "--color-token-disabled-foreground",
+    "--color-token-icon-foreground", "--color-token-border", "--color-token-border-default",
+    "--color-token-border-heavy", "--color-token-border-light",
+    "--color-token-primary", "--color-token-link", "--color-token-focus-border",
+    "--color-token-charts-blue",
+    "--color-token-list-focus-outline", "--color-token-text-link-foreground",
+    "--color-token-text-link-active-foreground", "--color-token-list-hover-background",
+    "--color-token-list-active-selection-background", "--color-token-list-active-selection-foreground",
+    "--color-token-list-active-selection-icon-foreground", "--color-token-toolbar-hover-background",
+    "--color-token-menubar-selection-background", "--color-token-menubar-selection-foreground",
+    "--color-token-scrollbar-slider-background", "--color-token-scrollbar-slider-hover-background",
+    "--color-token-scrollbar-slider-active-background", "--color-token-button-background",
+    "--color-token-button-foreground", "--color-token-button-border", "--color-token-on-accent",
+    "--color-background-surface-under", "--color-background-surface",
+    "--color-background-panel", "--color-background-editor-opaque",
+    "--color-background-control", "--color-background-control-opaque",
+    "--color-background-elevated-primary", "--color-background-elevated-primary-opaque",
+    "--color-background-elevated-secondary", "--color-background-elevated-secondary-opaque",
+    "--color-background-accent", "--color-background-accent-hover",
+    "--color-background-accent-active", "--color-background-button-primary",
+    "--color-background-button-primary-hover", "--color-background-button-primary-active",
+    "--color-background-button-primary-inactive", "--color-background-button-secondary",
+    "--color-background-button-secondary-hover", "--color-background-button-secondary-active",
+    "--color-background-button-secondary-inactive", "--color-background-button-tertiary",
+    "--color-background-button-tertiary-hover", "--color-background-button-tertiary-active",
+    "--color-text-foreground", "--color-text-foreground-secondary",
+    "--color-text-foreground-tertiary", "--color-text-accent",
+    "--color-text-button-primary", "--color-text-button-secondary",
+    "--color-text-button-tertiary", "--color-text-on-accent",
+    "--color-icon-primary", "--color-icon-secondary", "--color-icon-tertiary",
+    "--color-icon-accent", "--color-border", "--color-border-heavy",
+    "--color-border-light", "--color-border-focus",
+  ];
   const ROOT_PROPERTIES = [
     "--dream-art",
     "--dream-art-position",
@@ -48,6 +109,7 @@
     "--dream-task-immersive-edge",
     "--dream-task-immersive-mid",
     "--dream-task-immersive-far",
+    ...NATIVE_THEME_PROPERTIES,
   ];
   const HOME_UTILITY_CLASS = "dream-home-utility";
   const installToken = {};
@@ -135,6 +197,9 @@
   if (previous?.observer) previous.observer.disconnect();
   if (previous?.timer) clearInterval(previous.timer);
   if (previous?.scheduler?.timeout) clearTimeout(previous.scheduler.timeout);
+  if (previous?.scheduler?.frame != null && typeof cancelAnimationFrame === "function") {
+    cancelAnimationFrame(previous.scheduler.frame);
+  }
   if (previous?.artUrl) URL.revokeObjectURL(previous.artUrl);
   const artUrl = (() => {
     const comma = artDataUrl.indexOf(",");
@@ -406,6 +471,7 @@
       "--dream-immersive-sidebar", "--dream-task-immersive-sidebar",
       "--dream-immersive-composer", "--dream-immersive-line",
       "--dream-task-immersive-edge", "--dream-task-immersive-mid", "--dream-task-immersive-far",
+      ...NATIVE_THEME_PROPERTIES,
     ];
     for (const property of clearStructural) root.style.removeProperty(property);
 
@@ -416,6 +482,17 @@
       const text = has("text") ? colors.text : null;
       const muted = has("muted") ? colors.muted : null;
       const line = has("line") ? colors.line : null;
+      const setMany = (properties, value) => {
+        if (!value) return;
+        for (const property of properties) root.style.setProperty(property, value);
+      };
+      // Current Codex declares its newer --color-* semantic palette with
+      // !important. Inline priority is required for the Windows bridge to win;
+      // cleanup still removes every property when the active theme has no colors{}.
+      const setManyImportant = (properties, value) => {
+        if (!value) return;
+        for (const property of properties) root.style.setProperty(property, value, "important");
+      };
       if (bg) root.style.setProperty("--dream-canvas", bg);
       if (panel) {
         root.style.setProperty("--dream-surface", panel);
@@ -438,10 +515,11 @@
         root.style.setProperty("--dream-immersive-mid", `color-mix(in oklab, ${panel} 28%, transparent)`);
         root.style.setProperty("--dream-immersive-far", `color-mix(in oklab, ${panel} 14%, transparent)`);
         root.style.setProperty("--dream-immersive-sidebar", `color-mix(in oklab, ${panel} 50%, transparent)`);
-        root.style.setProperty("--dream-task-immersive-sidebar", `color-mix(in oklab, ${panel} 72%, transparent)`);
-        root.style.setProperty("--dream-task-immersive-edge", `color-mix(in oklab, ${panel} 86%, transparent)`);
-        root.style.setProperty("--dream-task-immersive-mid", `color-mix(in oklab, ${panel} 78%, transparent)`);
-        root.style.setProperty("--dream-task-immersive-far", `color-mix(in oklab, ${panel} 66%, transparent)`);
+        root.style.setProperty("--dream-task-immersive-sidebar", `color-mix(in oklab, ${panel} ${appearance === "light" ? 72 : 70}%, transparent)`);
+        const taskWashBase = appearance === "light" ? panel : (bg || panel);
+        root.style.setProperty("--dream-task-immersive-edge", `color-mix(in oklab, ${taskWashBase} ${appearance === "light" ? 86 : 82}%, transparent)`);
+        root.style.setProperty("--dream-task-immersive-mid", `color-mix(in oklab, ${taskWashBase} ${appearance === "light" ? 78 : 74}%, transparent)`);
+        root.style.setProperty("--dream-task-immersive-far", `color-mix(in oklab, ${taskWashBase} ${appearance === "light" ? 66 : 60}%, transparent)`);
       }
       if (panelAlt || panel) {
         const raised = panelAlt || panel;
@@ -450,6 +528,145 @@
           `color-mix(in oklab, ${raised} 88%, ${accent} 5%)`,
         );
       }
+
+      // Bridge the shared theme contract into Windows-native Codex controls.
+      // This replaces the old installer-wide purple/pink chrome preset and is
+      // removed automatically when switching to a theme without colors{}.
+      if (bg) {
+        setMany(["--color-token-bg-primary"], bg);
+        setMany(["--color-token-bg-secondary"], `color-mix(in srgb, ${bg} 92%, transparent)`);
+        setMany(["--color-token-bg-tertiary"], `color-mix(in srgb, ${bg} 85%, transparent)`);
+        setManyImportant(["--color-background-surface-under"], bg);
+      }
+      if (panel) {
+        setMany([
+          "--vscode-editor-background", "--vscode-panel-background", "--vscode-sideBar-background",
+          "--vscode-terminal-background", "--color-token-main-surface-primary",
+          "--color-token-side-bar-background", "--color-token-editor-background",
+          "--color-token-terminal-background",
+        ], panel);
+        setMany(["--color-token-bg-fog"], `color-mix(in oklab, ${panel} 78%, transparent)`);
+        setManyImportant([
+          "--color-background-surface", "--color-background-editor-opaque",
+        ], panel);
+      }
+      if (panelAlt || panel) {
+        const raised = panelAlt || panel;
+        /* Match macOS local task-card opacity: readable controls without a
+           nearly opaque rectangle covering the wallpaper. */
+        const raisedSoft = `color-mix(in oklab, ${raised} ${appearance === "light" ? 72 : 44}%, transparent)`;
+        setMany([
+          "--vscode-input-background", "--vscode-dropdown-background", "--vscode-menu-background",
+          "--color-token-input-background", "--color-token-dropdown-background",
+          "--color-token-menu-background", "--color-token-editor-widget-background",
+          "--color-token-checkbox-background",
+        ], raisedSoft);
+        setManyImportant([
+          "--color-background-panel", "--color-background-control",
+          "--color-background-elevated-primary", "--color-background-elevated-secondary",
+        ], raisedSoft);
+        setManyImportant([
+          "--color-background-control-opaque", "--color-background-elevated-primary-opaque",
+          "--color-background-elevated-secondary-opaque",
+        ], raised);
+      }
+      if (text) {
+        setMany([
+          "--vscode-foreground", "--vscode-icon-foreground", "--vscode-input-foreground",
+          "--vscode-dropdown-foreground", "--vscode-menu-foreground", "--vscode-editor-foreground",
+          "--vscode-sideBar-foreground", "--vscode-terminal-foreground", "--color-token-foreground",
+          "--color-token-text-primary", "--color-token-icon-foreground", "--color-token-input-foreground",
+          "--color-token-dropdown-foreground", "--color-token-editor-foreground",
+          "--color-token-terminal-foreground", "--color-token-checkbox-foreground",
+          "--color-token-list-active-selection-foreground",
+          "--color-token-list-active-selection-icon-foreground", "--color-token-menubar-selection-foreground",
+        ], text);
+        setManyImportant([
+          "--color-text-foreground", "--color-text-button-secondary", "--color-icon-primary",
+        ], text);
+      }
+      if (muted) {
+        setMany([
+          "--vscode-descriptionForeground", "--vscode-disabledForeground",
+          "--vscode-input-placeholderForeground", "--color-token-text-secondary",
+          "--color-token-text-tertiary", "--color-token-description-foreground",
+          "--color-token-disabled-foreground", "--color-token-input-placeholder-foreground",
+        ], muted);
+        setManyImportant([
+          "--color-text-foreground-secondary", "--color-text-foreground-tertiary",
+          "--color-text-button-tertiary", "--color-icon-secondary", "--color-icon-tertiary",
+        ], muted);
+      }
+      if (line) {
+        setMany([
+          "--vscode-input-border", "--vscode-dropdown-border", "--vscode-menu-border",
+          "--vscode-panel-border", "--vscode-sideBar-border", "--vscode-terminal-border",
+          "--vscode-button-border", "--vscode-scrollbarSlider-background",
+          "--color-token-border", "--color-token-border-default", "--color-token-border-heavy",
+          "--color-token-border-light", "--color-token-input-border", "--color-token-terminal-border",
+          "--color-token-button-border", "--color-token-scrollbar-slider-background",
+        ], line);
+        setMany([
+          "--vscode-scrollbarSlider-hoverBackground", "--vscode-scrollbarSlider-activeBackground",
+          "--color-token-scrollbar-slider-hover-background",
+          "--color-token-scrollbar-slider-active-background",
+        ], `color-mix(in oklab, ${line} 82%, ${text || accent})`);
+        setManyImportant([
+          "--color-border", "--color-border-heavy", "--color-border-light",
+        ], line);
+      }
+      setMany([
+        "--vscode-focusBorder", "--vscode-textLink-foreground", "--vscode-textLink-activeForeground",
+        "--color-token-primary", "--color-token-link", "--color-token-focus-border",
+        "--color-token-list-focus-outline", "--color-token-text-link-foreground",
+        "--color-token-text-link-active-foreground", "--color-token-button-background",
+        "--color-token-charts-blue",
+      ], accent);
+      setMany(["--vscode-button-background"], accent);
+      setMany([
+        "--vscode-button-foreground", "--color-token-button-foreground", "--color-token-on-accent",
+      ], accentInk);
+      setManyImportant([
+        "--color-text-accent", "--color-icon-accent", "--color-border-focus",
+        "--color-background-button-primary",
+      ], accent);
+      setManyImportant([
+        "--color-text-button-primary", "--color-text-on-accent",
+      ], accentInk);
+      const nativeHover = `color-mix(in oklab, ${accent} 12%, transparent)`;
+      const nativeSelection = `color-mix(in oklab, ${accent} 18%, transparent)`;
+      const nativeActive = `color-mix(in oklab, ${accent} 24%, transparent)`;
+      setMany([
+        "--vscode-list-hoverBackground", "--color-token-list-hover-background",
+        "--color-token-toolbar-hover-background", "--color-token-menubar-selection-background",
+      ], nativeHover);
+      setMany([
+        "--vscode-list-activeSelectionBackground", "--color-token-list-active-selection-background",
+      ], nativeSelection);
+      setManyImportant([
+        "--color-background-accent", "--color-background-button-secondary",
+        "--color-background-button-tertiary-hover",
+      ], nativeHover);
+      setManyImportant([
+        "--color-background-accent-hover", "--color-background-button-secondary-hover",
+      ], nativeSelection);
+      setManyImportant([
+        "--color-background-accent-active", "--color-background-button-secondary-active",
+        "--color-background-button-tertiary-active",
+      ], nativeActive);
+      setManyImportant(["--color-background-button-tertiary"], "transparent");
+      setManyImportant([
+        "--color-background-button-primary-hover",
+      ], `color-mix(in oklab, ${accent} 88%, ${text || panelAlt || panel || bg || accent})`);
+      setManyImportant([
+        "--color-background-button-primary-active",
+      ], `color-mix(in oklab, ${accent} 76%, ${text || panelAlt || panel || bg || accent})`);
+      setManyImportant([
+        "--color-background-button-primary-inactive",
+      ], `color-mix(in oklab, ${accent} 42%, transparent)`);
+      setManyImportant([
+        "--color-background-button-secondary-inactive",
+      ], `color-mix(in oklab, ${accent} 5%, transparent)`);
     }
   };
 
@@ -485,9 +702,22 @@
       style.dataset.dreamVersion = "3";
     }
 
-    const home = document.querySelector('[role="main"]:has([data-testid="home-icon"])');
-    const mainCandidates = [...document.querySelectorAll('[role="main"]')];
-    if (!mainCandidates.length) mainCandidates.push(shellMain);
+    // Codex removed data-testid="home-icon" from the current Windows home
+    // route, and the replacement container can briefly render without a main
+    // role. Prefer its exact container token, with semantic/legacy fallbacks.
+    const gameSource = document.querySelector('[data-feature="game-source"]');
+    const home = document.querySelector('[role="main"]:has([data-testid="home-icon"])') ||
+      document.querySelector('[class~="[container-name:home-main-content]"]') ||
+      document.querySelector('[role="main"]:has([data-feature="game-source"]):has(.group\\/home-suggestions)') ||
+      gameSource?.closest('[role="main"]');
+    const mainCandidates = new Set(document.querySelectorAll('[role="main"]'));
+    if (home) mainCandidates.add(home);
+    if (!mainCandidates.size) mainCandidates.add(shellMain);
+    for (const candidate of document.querySelectorAll('.dream-home, .dream-task')) {
+      if (!mainCandidates.has(candidate)) {
+        candidate.classList.remove('dream-home', 'dream-task');
+      }
+    }
     for (const candidate of mainCandidates) {
       candidate.classList.toggle("dream-home", candidate === home);
       candidate.classList.toggle("dream-task", candidate !== home);
@@ -518,18 +748,32 @@
     state?.observer?.disconnect();
     if (state?.timer) clearInterval(state.timer);
     if (state?.scheduler?.timeout) clearTimeout(state.scheduler.timeout);
+    if (state?.scheduler?.frame != null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(state.scheduler.frame);
+    }
     if (state?.artUrl) URL.revokeObjectURL(state.artUrl);
     delete window[STATE_KEY];
     return true;
   };
 
-  const scheduler = { timeout: null };
-  const scheduleEnsure = () => {
+  const scheduler = { timeout: null, frame: null };
+  const flushScheduledEnsure = () => {
+    if (scheduler.frame !== null && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(scheduler.frame);
+    }
     if (scheduler.timeout) clearTimeout(scheduler.timeout);
-    scheduler.timeout = setTimeout(() => {
-      scheduler.timeout = null;
-      ensure();
-    }, 180);
+    scheduler.frame = null;
+    scheduler.timeout = null;
+    ensure();
+  };
+  const scheduleEnsure = () => {
+    if (scheduler.timeout || scheduler.frame !== null) return;
+    if (typeof requestAnimationFrame === "function") {
+      scheduler.frame = requestAnimationFrame(flushScheduledEnsure);
+      scheduler.timeout = setTimeout(flushScheduledEnsure, 96);
+    } else {
+      scheduler.timeout = setTimeout(flushScheduledEnsure, 64);
+    }
   };
   observer = new MutationObserver(() => {
     if (samplingNativeShell) return;

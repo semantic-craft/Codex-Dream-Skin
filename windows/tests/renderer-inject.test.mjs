@@ -20,12 +20,86 @@ assert.doesNotMatch(
   "The skin must preserve Codex's native fixed header so the side-panel toggle remains reachable.",
 );
 
+const normalizedCss = css.replace(/\s+/g, " ");
+
+function cssRuleBody(selector) {
+  const selectorIndex = normalizedCss.indexOf(selector);
+  assert.notEqual(selectorIndex, -1, `Missing CSS selector: ${selector}`);
+
+  const openBrace = normalizedCss.indexOf("{", selectorIndex);
+  const closeBrace = normalizedCss.indexOf("}", openBrace);
+  assert.ok(
+    openBrace > selectorIndex && closeBrace > openBrace,
+    `Malformed CSS rule: ${selector}`,
+  );
+  return normalizedCss.slice(openBrace + 1, closeBrace);
+}
+
+assert.match(
+  cssRuleBody(".dream-home > div:first-child > div:first-child > div:first-child"),
+  /overflow:\s*visible\s*!important;/,
+  "The Windows home hero must not clip the native suggestion row positioned below it.",
+);
+assert.match(
+  cssRuleBody("html.codex-dream-skin .dream-home"),
+  /--thread-content-max-width:\s*min\(1180px,\s*calc\(100cqw\s*-\s*20px\)\)\s*!important;/,
+  "The Windows home width must leave room for Codex's native fourth suggestion at common display scaling.",
+);
+assert.match(
+  cssRuleBody(".dream-home > div:first-child > div:first-child > div:first-child"),
+  /width:\s*calc\(100%\s*-\s*20px\)\s*!important;/,
+  "The Windows hero must expose enough container width for four native Codex cards.",
+);
+
+const settingsSurfaceSelector =
+  'main.main-surface:not(.dream-home-shell) ' +
+  '[class~="main-surface"][class~="h-full"][class~="min-h-0"][class~="flex-col"]';
+const settingsSurfaceRule = cssRuleBody(settingsSurfaceSelector);
+assert.match(
+  settingsSurfaceRule,
+  /color:\s*var\(--dream-text\)\s*!important;/,
+  "The real Windows settings surface must use the active theme text color.",
+);
+assert.match(
+  settingsSurfaceRule,
+  /background:\s*transparent\s*!important;/,
+  "The real Windows settings surface must stay transparent so the outer themed task wash remains visible.",
+);
+
+const sharedComposerBackground =
+  /background:\s*var\(--dream-immersive-composer\)\s*!important;/;
+assert.match(
+  cssRuleBody("html.codex-dream-skin .composer-surface-chrome"),
+  sharedComposerBackground,
+  "The base composer must use the immersive composer color for standard and wide artwork.",
+);
+assert.match(
+  cssRuleBody("html.codex-dream-skin .dream-home-utility"),
+  sharedComposerBackground,
+  "The home utility bar and composer must use the same background token.",
+);
+assert.match(
+  cssRuleBody(
+    'html.codex-dream-skin aside.app-shell-left-panel div:has(> input[type="text"])',
+  ),
+  sharedComposerBackground,
+  "The Windows settings search field must not retain its native light surface.",
+);
+assert.match(
+  cssRuleBody('html.codex-dream-skin [class~="group/application-menu-top-bar"]'),
+  /color:\s*var\(--dream-text\)\s*!important;/,
+  "The Windows application menu must follow theme text in light and dark shells.",
+);
+
 function createFixture({
   shellPresent,
   mainPresent = shellPresent,
   sidebarPresent = shellPresent,
   staleSkin = false,
   homePresent = false,
+  modernHomePresent = false,
+  semanticHomePresent = false,
+  roleMainPresent = true,
   utilityPresent = false,
   shellAppearance = "dark",
   computedColorScheme = "",
@@ -35,11 +109,14 @@ function createFixture({
   const nodes = new Map();
   const rootClasses = new Set(staleSkin ? ["codex-dream-skin"] : []);
   const rootStyles = new Map(staleSkin ? [["--dream-art", "url(\"blob:stale\")"]] : []);
+  const rootPriorities = new Map();
   const revokedUrls = [];
   const observers = [];
   let objectUrlCount = 0;
   let hasMain = mainPresent;
   let hasSidebar = sidebarPresent;
+  let hasModernHome = modernHomePresent;
+  let hasRoleMain = roleMainPresent;
   let root;
 
   const queueRootClassMutation = () => {
@@ -76,8 +153,15 @@ function createFixture({
     classList: makeClassList(rootClasses, queueRootClassMutation),
     getAttribute() { return null; },
     style: {
-      setProperty(key, value) { rootStyles.set(key, value); },
-      removeProperty(key) { rootStyles.delete(key); },
+      setProperty(key, value, priority = "") {
+        rootStyles.set(key, value);
+        if (priority) rootPriorities.set(key, priority);
+        else rootPriorities.delete(key);
+      },
+      removeProperty(key) {
+        rootStyles.delete(key);
+        rootPriorities.delete(key);
+      },
     },
     appendChild(node) {
       node.parentElement = root;
@@ -92,8 +176,9 @@ function createFixture({
       nodes.set(node.id, node);
     },
   };
+  const shellClasses = new Set();
   const shellMain = {
-    classList: makeClassList(),
+    classList: makeClassList(shellClasses),
     getBoundingClientRect() {
       return { left: 290, top: 36, width: 990, height: 784 };
     },
@@ -156,14 +241,34 @@ function createFixture({
       if (selector === "main") return hasMain ? shellMain : null;
       if (selector === "aside.app-shell-left-panel") return hasSidebar ? {} : null;
       if (selector === '[role="main"]:has([data-testid="home-icon"])') {
-        return hasMain && homePresent ? routeMain : null;
+        return hasMain && hasRoleMain && homePresent ? routeMain : null;
       }
-      if (selector === '[role="main"]') return hasMain ? routeMain : null;
+      if (selector === '[class~="[container-name:home-main-content]"]') {
+        return hasMain && hasModernHome ? routeMain : null;
+      }
+      if (selector === '[role="main"]:has([data-feature="game-source"]):has(.group\\/home-suggestions)') {
+        return hasMain && hasRoleMain && semanticHomePresent ? routeMain : null;
+      }
+      if (selector === '[data-feature="game-source"]') {
+        return semanticHomePresent ? { closest() { return routeMain; } } : null;
+      }
+      if (selector === '[role="main"]') return hasMain && hasRoleMain ? routeMain : null;
       return null;
     },
     querySelectorAll(selector) {
-      if (selector === '[role="main"]') return hasMain ? [routeMain] : [];
-      if (selector === ".dream-task") return routeClasses.has("dream-task") ? [routeMain] : [];
+      if (selector === '[role="main"]') return hasMain && hasRoleMain ? [routeMain] : [];
+      if (selector === ".dream-home, .dream-task") {
+        return [
+          ...(routeClasses.has("dream-home") || routeClasses.has("dream-task") ? [routeMain] : []),
+          ...(shellClasses.has("dream-home") || shellClasses.has("dream-task") ? [shellMain] : []),
+        ];
+      }
+      if (selector === ".dream-task") {
+        return [
+          ...(routeClasses.has("dream-task") ? [routeMain] : []),
+          ...(shellClasses.has("dream-task") ? [shellMain] : []),
+        ];
+      }
       if (selector === ".dream-home-utility") {
         return utilityClasses.has("dream-home-utility") ? [utilityNode] : [];
       }
@@ -226,9 +331,11 @@ function createFixture({
     nodes,
     observers,
     rootClasses,
+    rootPriorities,
     rootStyles,
     revokedUrls,
     routeClasses,
+    shellClasses,
     utilityClasses,
     setShellPresent(value) {
       hasMain = value;
@@ -236,6 +343,8 @@ function createFixture({
     },
     setSidebarPresent(value) { hasSidebar = value; },
     setMainPresent(value) { hasMain = value; },
+    setModernHomePresent(value) { hasModernHome = value; },
+    setRoleMainPresent(value) { hasRoleMain = value; },
   };
 }
 
@@ -330,6 +439,25 @@ assert.equal(configured.rootClasses.has("dream-task-off"), true);
 assert.equal(configured.rootStyles.get("--dream-art-position"), "15% 80%");
 assert.equal(configured.rootStyles.get("--dream-accent"), "#d45a70");
 assert.equal(configured.routeClasses.has("dream-home"), true);
+// A normal theme has no colors{} contract. It may still set Dream Skin's own
+// adaptive variables, but it must not overwrite Codex's native token palette.
+for (const nativeProperty of [
+  "--vscode-editor-background",
+  "--vscode-foreground",
+  "--vscode-input-background",
+  "--color-token-bg-primary",
+  "--color-token-main-surface-primary",
+  "--color-token-text-primary",
+  "--color-token-charts-blue",
+  "--color-background-panel",
+  "--color-text-foreground",
+]) {
+  assert.equal(
+    configured.rootStyles.has(nativeProperty),
+    false,
+    `A theme without colors{} must not set ${nativeProperty}.`,
+  );
+}
 
 // Gothic-style packs use colors{} (macOS contract). Windows must honor them so
 // dark structure surfaces do not fall back to the light shell palette.
@@ -356,10 +484,122 @@ assert.equal(gothic.rootStyles.get("--dream-text"), "#f3ead7");
 assert.equal(gothic.rootStyles.get("--dream-text-muted"), "#b5a386");
 // Accent ink is derived from the configured accent color, not image analysis RGB.
 assert.match(gothic.rootStyles.get("--dream-accent-ink"), /^rgb\(/);
+for (const [nativeProperty, expectedValue] of [
+  ["--color-token-bg-primary", "#0d0d0e"],
+  ["--color-token-main-surface-primary", "#171513"],
+  ["--color-token-side-bar-background", "#171513"],
+  ["--vscode-editor-background", "#171513"],
+  ["--vscode-panel-background", "#171513"],
+  ["--vscode-input-background", "color-mix(in oklab, #211d18 72%, transparent)"],
+  ["--vscode-foreground", "#f3ead7"],
+  ["--vscode-descriptionForeground", "#b5a386"],
+  ["--vscode-input-border", "rgba(200, 165, 90, .28)"],
+  ["--vscode-focusBorder", "#c8a55a"],
+  ["--color-token-charts-blue", "#c8a55a"],
+  ["--color-background-surface-under", "#0d0d0e"],
+  ["--color-background-surface", "#171513"],
+  ["--color-background-panel", "color-mix(in oklab, #211d18 72%, transparent)"],
+  ["--color-background-control-opaque", "#211d18"],
+  ["--color-text-foreground", "#f3ead7"],
+  ["--color-text-foreground-secondary", "#b5a386"],
+  ["--color-border", "rgba(200, 165, 90, .28)"],
+  ["--color-text-accent", "#c8a55a"],
+]) {
+  assert.equal(
+    gothic.rootStyles.get(nativeProperty),
+    expectedValue,
+    `Gothic colors{} must map ${nativeProperty} to its native token value.`,
+  );
+}
+assert.equal(
+  gothic.rootPriorities.get("--color-background-panel"),
+  "important",
+  "The current Codex semantic palette uses !important and must be bridged at equal priority.",
+);
 assert.equal(configured.routeClasses.has("dream-task"), false);
 assert.equal(configured.utilityClasses.has("dream-home-utility"), true);
 assert.equal(configured.context.window.__CODEX_DREAM_SKIN_STATE__.cleanup(), true);
 assert.equal(configured.utilityClasses.has("dream-home-utility"), false);
+assert.equal(gothic.context.window.__CODEX_DREAM_SKIN_STATE__.cleanup(), true);
+for (const nativeProperty of [
+  "--color-token-bg-primary",
+  "--color-token-main-surface-primary",
+  "--vscode-editor-background",
+  "--vscode-foreground",
+  "--vscode-input-background",
+  "--vscode-descriptionForeground",
+  "--vscode-input-border",
+  "--vscode-focusBorder",
+  "--color-token-charts-blue",
+  "--color-background-panel",
+  "--color-background-surface",
+  "--color-text-foreground",
+  "--color-border",
+]) {
+  assert.equal(
+    gothic.rootStyles.has(nativeProperty),
+    false,
+    `cleanup() must remove native theme property ${nativeProperty}.`,
+  );
+}
+assert.equal(gothic.rootPriorities.has("--color-background-panel"), false);
+
+const gothicDark = createFixture({ shellPresent: true, shellAppearance: "dark" });
+vm.runInNewContext(gothicPayload, gothicDark.context);
+for (const [property, expectedValue] of [
+  ["--dream-task-immersive-sidebar", "color-mix(in oklab, #171513 70%, transparent)"],
+  ["--dream-task-immersive-edge", "color-mix(in oklab, #0d0d0e 82%, transparent)"],
+  ["--dream-task-immersive-mid", "color-mix(in oklab, #0d0d0e 74%, transparent)"],
+  ["--dream-task-immersive-far", "color-mix(in oklab, #0d0d0e 60%, transparent)"],
+  ["--vscode-input-background", "color-mix(in oklab, #211d18 44%, transparent)"],
+  ["--color-background-panel", "color-mix(in oklab, #211d18 44%, transparent)"],
+]) {
+  assert.equal(
+    gothicDark.rootStyles.get(property),
+    expectedValue,
+    `Dark Gothic colors{} must preserve the macOS wash value for ${property}.`,
+  );
+}
+assert.equal(gothicDark.context.window.__CODEX_DREAM_SKIN_STATE__.cleanup(), true);
+
+// Current Codex Windows builds no longer expose data-testid="home-icon".
+// The semantic game-source marker must still classify the new-task route as
+// home so its utility bar and composer share one themed surface.
+const modernHome = createFixture({
+  shellPresent: true,
+  modernHomePresent: true,
+  roleMainPresent: false,
+  utilityPresent: true,
+});
+vm.runInNewContext(payload, modernHome.context);
+assert.equal(modernHome.routeClasses.has("dream-home"), true);
+assert.equal(modernHome.routeClasses.has("dream-task"), false);
+assert.equal(modernHome.utilityClasses.has("dream-home-utility"), true);
+
+// Keep the same semantic fallback as macOS when Codex changes the named
+// Windows container token but retains both native home markers.
+const semanticHome = createFixture({
+  shellPresent: true,
+  semanticHomePresent: true,
+  utilityPresent: true,
+});
+vm.runInNewContext(payload, semanticHome.context);
+assert.equal(semanticHome.routeClasses.has("dream-home"), true);
+assert.equal(semanticHome.routeClasses.has("dream-task"), false);
+assert.equal(semanticHome.utilityClasses.has("dream-home-utility"), true);
+
+// Settings has no role=main, so the persistent shell temporarily owns the
+// task marker. Returning home must remove that stale marker from the shell.
+const settingsToHome = createFixture({
+  shellPresent: true,
+  roleMainPresent: false,
+});
+vm.runInNewContext(payload, settingsToHome.context);
+assert.equal(settingsToHome.shellClasses.has("dream-task"), true);
+settingsToHome.setModernHomePresent(true);
+settingsToHome.context.window.__CODEX_DREAM_SKIN_STATE__.ensure();
+assert.equal(settingsToHome.routeClasses.has("dream-home"), true);
+assert.equal(settingsToHome.shellClasses.has("dream-task"), false);
 
 const analysisPixels = new Uint8ClampedArray(48 * 12 * 4);
 for (let index = 0; index < 48 * 12; index += 1) {

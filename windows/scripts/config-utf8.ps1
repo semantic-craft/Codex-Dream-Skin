@@ -353,6 +353,26 @@ function Test-DreamSkinLegacyManagedLightTrio {
   )
 }
 
+function Restore-DreamSkinLegacyManagedSetting {
+  param(
+    [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Body,
+    [AllowNull()][AllowEmptyString()][string]$BackupBody,
+    [Parameter(Mandatory = $true)][string]$Key,
+    [Parameter(Mandatory = $true)][string]$ManagedLine,
+    [Parameter(Mandatory = $true)][string]$NewLine
+  )
+
+  $currentLine = Get-DreamSkinSectionSettingLine -Body $Body -Key $Key
+  if ($currentLine -cne $ManagedLine) { return $Body }
+
+  $savedLine = if ($null -ne $BackupBody) {
+    Get-DreamSkinSectionSettingLine -Body $BackupBody -Key $Key
+  } else { $null }
+  if ($savedLine -ceq $ManagedLine) { return $Body }
+
+  return Set-DreamSkinSectionSetting -Body $Body -Key $Key -Line $savedLine -NewLine $NewLine
+}
+
 function Get-DreamSkinAppearanceMarkerPath {
   param([Parameter(Mandatory = $true)][string]$BackupPath)
   return "$BackupPath.appearance.json"
@@ -405,54 +425,56 @@ function Install-DreamSkinBaseTheme {
   }
   $originalBytes = [System.IO.File]::ReadAllBytes($ConfigPath)
   $content = ConvertFrom-DreamSkinUtf8Bytes -Bytes $originalBytes -Path $ConfigPath
-  $appearanceMarker = Read-DreamSkinAppearanceMarker -BackupPath $BackupPath
+  $null = Read-DreamSkinAppearanceMarker -BackupPath $BackupPath
   $backupCreated = $false
-  if (-not (Test-Path -LiteralPath $BackupPath)) {
-    Write-DreamSkinBytesAtomically -Path $BackupPath -Bytes $originalBytes -ExpectedBytes $null
-    $backupCreated = $true
-  }
-
-  $writeCompleted = $false
+  $operationCompleted = $false
   try {
     Assert-DreamSkinDesktopShapeSupported -Content $content
-    $newLine = Get-DreamSkinNewLine -Content $content
+    if (-not (Test-Path -LiteralPath $BackupPath)) {
+      Write-DreamSkinBytesAtomically -Path $BackupPath -Bytes $originalBytes -ExpectedBytes $null
+      $backupCreated = $true
+    }
+
+    $backupContent = ConvertFrom-DreamSkinUtf8Bytes `
+      -Bytes ([System.IO.File]::ReadAllBytes($BackupPath)) -Path $BackupPath
+    Assert-DreamSkinDesktopShapeSupported -Content $backupContent
+
     $desktop = Get-DreamSkinDesktopSection -Content $content
-    if ($null -eq $desktop) {
-      $content = Add-DreamSkinDesktopSection -Content $content -NewLine $newLine
-      $desktop = Get-DreamSkinDesktopSection -Content $content
+    $backupDesktop = Get-DreamSkinDesktopSection -Content $backupContent
+    $updatedContent = $content
+    if ($null -ne $desktop) {
+      $newLine = Get-DreamSkinNewLine -Content $content
+      $body = $desktop.Body
+      $backupBody = if ($null -ne $backupDesktop) { $backupDesktop.Body } else { $null }
+      $legacyTrio = Test-DreamSkinLegacyManagedLightTrio -Content $content
+      if ($legacyTrio) {
+        $body = Restore-DreamSkinLegacyManagedSetting -Body $body -BackupBody $backupBody `
+          -Key 'appearanceTheme' -ManagedLine $script:DreamSkinLegacyAppearanceTheme -NewLine $newLine
+      }
+      $body = Restore-DreamSkinLegacyManagedSetting -Body $body -BackupBody $backupBody `
+        -Key 'appearanceLightCodeThemeId' -ManagedLine $script:DreamSkinManagedLightCodeTheme -NewLine $newLine
+      $body = Restore-DreamSkinLegacyManagedSetting -Body $body -BackupBody $backupBody `
+        -Key 'appearanceLightChromeTheme' -ManagedLine $script:DreamSkinManagedLightChromeTheme -NewLine $newLine
+
+      if ($body -cne $desktop.Body) {
+        if ($null -eq $backupDesktop -and [string]::IsNullOrWhiteSpace($body)) {
+          $updatedContent = $content.Remove($desktop.SectionStart, $desktop.SectionLength)
+        } else {
+          $updatedContent = $content.Substring(0, $desktop.BodyStart) + $body +
+            $content.Substring($desktop.BodyStart + $desktop.BodyLength)
+        }
+      }
     }
 
-    $body = $desktop.Body
-    $backupContent = $null
-    $legacyMigration = $null -eq $appearanceMarker -and (Test-Path -LiteralPath $BackupPath) -and
-      (Test-DreamSkinLegacyManagedLightTrio -Content $content)
-    if ($legacyMigration) {
-      $backupContent = ConvertFrom-DreamSkinUtf8Bytes -Bytes ([System.IO.File]::ReadAllBytes($BackupPath)) -Path $BackupPath
-      Assert-DreamSkinDesktopShapeSupported -Content $backupContent
-      $backupDesktop = Get-DreamSkinDesktopSection -Content $backupContent
-      $savedAppearance = if ($null -ne $backupDesktop) {
-        Get-DreamSkinSectionSettingLine -Body $backupDesktop.Body -Key 'appearanceTheme'
-      } else { $null }
-      $body = Set-DreamSkinSectionSetting -Body $body -Key 'appearanceTheme' -Line $savedAppearance -NewLine $newLine
+    if ($updatedContent -cne $content) {
+      Write-DreamSkinUtf8FileAtomically -Path $ConfigPath -Content $updatedContent -ExpectedBytes $originalBytes
+    } else {
+      Assert-DreamSkinFileUnchanged -Path $ConfigPath -ExpectedBytes $originalBytes
     }
-    $settings = [ordered]@{
-      appearanceLightCodeThemeId = $script:DreamSkinManagedLightCodeTheme
-      appearanceLightChromeTheme = $script:DreamSkinManagedLightChromeTheme
-    }
-    $hasNestedLightChromeTheme = Test-DreamSkinDesktopNestedTable `
-      -Content $content -Key 'appearanceLightChromeTheme'
-    foreach ($key in $settings.Keys) {
-      if ($key -eq 'appearanceLightChromeTheme' -and $hasNestedLightChromeTheme) { continue }
-      $body = Set-DreamSkinSectionSetting -Body $body -Key $key -Line $settings[$key] -NewLine $newLine
-    }
-
-    $content = $content.Substring(0, $desktop.BodyStart) + $body +
-      $content.Substring($desktop.BodyStart + $desktop.BodyLength)
-    Write-DreamSkinUtf8FileAtomically -Path $ConfigPath -Content $content -ExpectedBytes $originalBytes
     Write-DreamSkinAppearanceMarker -BackupPath $BackupPath
-    $writeCompleted = $true
+    $operationCompleted = $true
   } catch {
-    if ($backupCreated -and -not $writeCompleted) {
+    if ($backupCreated -and -not $operationCompleted) {
       Remove-Item -LiteralPath $BackupPath -Force -ErrorAction SilentlyContinue
     }
     throw
@@ -483,26 +505,27 @@ function Restore-DreamSkinBaseTheme {
   $newLine = Get-DreamSkinNewLine -Content $currentContent
   $backupDesktop = Get-DreamSkinDesktopSection -Content $backupContent
   $currentDesktop = Get-DreamSkinDesktopSection -Content $currentContent
+  $null = Read-DreamSkinAppearanceMarker -BackupPath $BackupPath
   if ($null -eq $currentDesktop) {
-    $currentContent = Add-DreamSkinDesktopSection -Content $currentContent -NewLine $newLine
-    $currentDesktop = Get-DreamSkinDesktopSection -Content $currentContent
+    Assert-DreamSkinFileUnchanged -Path $ConfigPath -ExpectedBytes $currentBytes
+    return
   }
 
   $body = $currentDesktop.Body
-  $appearanceMarker = Read-DreamSkinAppearanceMarker -BackupPath $BackupPath
-  $restoreLegacyAppearance = $null -eq $appearanceMarker -and
-    (Test-DreamSkinLegacyManagedLightTrio -Content $currentContent)
-  $restoreKeys = @('appearanceLightCodeThemeId', 'appearanceLightChromeTheme')
-  if ($restoreLegacyAppearance) { $restoreKeys = @('appearanceTheme') + $restoreKeys }
-  $hasNestedLightChromeTheme = Test-DreamSkinDesktopNestedTable `
-    -Content $currentContent -Key 'appearanceLightChromeTheme'
-  foreach ($key in $restoreKeys) {
-    if ($key -eq 'appearanceLightChromeTheme' -and $hasNestedLightChromeTheme) { continue }
-    $keyToken = Get-DreamSkinTomlKeyTokenPattern -Key $key
-    $pattern = "(?m)^[\t ]*$keyToken[\t ]*=[^\r\n]*(?:\r?\n|(?=\z))"
-    $saved = if ($null -ne $backupDesktop) { [regex]::Match($backupDesktop.Body, $pattern) } else { $null }
-    $line = if ($null -ne $saved -and $saved.Success) { $saved.Value } else { $null }
-    $body = Set-DreamSkinSectionSetting -Body $body -Key $key -Line $line -NewLine $newLine
+  $backupBody = if ($null -ne $backupDesktop) { $backupDesktop.Body } else { $null }
+  $legacyTrio = Test-DreamSkinLegacyManagedLightTrio -Content $currentContent
+  if ($legacyTrio) {
+    $body = Restore-DreamSkinLegacyManagedSetting -Body $body -BackupBody $backupBody `
+      -Key 'appearanceTheme' -ManagedLine $script:DreamSkinLegacyAppearanceTheme -NewLine $newLine
+  }
+  $body = Restore-DreamSkinLegacyManagedSetting -Body $body -BackupBody $backupBody `
+    -Key 'appearanceLightCodeThemeId' -ManagedLine $script:DreamSkinManagedLightCodeTheme -NewLine $newLine
+  $body = Restore-DreamSkinLegacyManagedSetting -Body $body -BackupBody $backupBody `
+    -Key 'appearanceLightChromeTheme' -ManagedLine $script:DreamSkinManagedLightChromeTheme -NewLine $newLine
+
+  if ($body -ceq $currentDesktop.Body) {
+    Assert-DreamSkinFileUnchanged -Path $ConfigPath -ExpectedBytes $currentBytes
+    return
   }
   if ($null -eq $backupDesktop -and [string]::IsNullOrWhiteSpace($body)) {
     $currentContent = $currentContent.Remove($currentDesktop.SectionStart, $currentDesktop.SectionLength)

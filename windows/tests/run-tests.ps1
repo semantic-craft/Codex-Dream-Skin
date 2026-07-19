@@ -256,9 +256,13 @@ try {
 
   Install-DreamSkinBaseTheme -ConfigPath $configPath -BackupPath $backupPath
   $installed = Read-DreamSkinUtf8File -Path $configPath
-  if (-not $installed.Contains($projectName) -or $installed -notmatch 'appearanceTheme = "system"' -or
-    $installed -notmatch 'appearanceLightCodeThemeId = "codex"') {
-    throw 'Install changed a non-ASCII project name or failed to preserve the native appearance.'
+  if (-not (Test-DreamSkinBytesEqual -Left $originalBytes `
+      -Right ([System.IO.File]::ReadAllBytes($configPath)))) {
+    throw 'Normal install rewrote config.toml instead of preserving its exact bytes.'
+  }
+  if ($installed.Contains($script:DreamSkinManagedLightCodeTheme) -or
+    $installed.Contains($script:DreamSkinManagedLightChromeTheme)) {
+    throw 'Normal install still wrote the legacy fixed light code/chrome theme.'
   }
   if (-not (Test-Path -LiteralPath (Get-DreamSkinAppearanceMarkerPath -BackupPath $backupPath))) {
     throw 'Install did not record the appearance-preservation marker.'
@@ -294,17 +298,62 @@ try {
   $legacyOriginal = "[desktop]`r`nappearanceTheme = `"system`"`r`nappearanceLightCodeThemeId = `"theme-original`"`r`nappearanceLightChromeTheme = { surface = `"original`" }`r`n"
   [System.IO.File]::WriteAllText($legacyConfigPath, $legacyCurrent, $utf8NoBom)
   [System.IO.File]::WriteAllText($legacyBackupPath, $legacyOriginal, $utf8NoBom)
+  Write-DreamSkinAppearanceMarker -BackupPath $legacyBackupPath
   Install-DreamSkinBaseTheme -ConfigPath $legacyConfigPath -BackupPath $legacyBackupPath
   $legacyMigrated = Read-DreamSkinUtf8File -Path $legacyConfigPath
-  if ($legacyMigrated -notmatch 'appearanceTheme = "system"' -or
-    $legacyMigrated -notmatch 'appearanceLightCodeThemeId = "codex"') {
-    throw 'Exact legacy managed light trio was not migrated to the saved native appearance.'
+  if ($legacyMigrated -cne $legacyOriginal -or
+    $legacyMigrated.Contains($script:DreamSkinManagedLightChromeTheme)) {
+    throw 'Exact legacy managed light trio was not fully migrated despite an existing schema-1 marker.'
   }
   $legacyMigrated = $legacyMigrated -replace 'appearanceTheme = "system"', 'appearanceTheme = "dark"'
+  $legacyMigrated = $legacyMigrated -replace 'appearanceLightCodeThemeId = "theme-original"', 'appearanceLightCodeThemeId = "user-edited"'
+  $legacyMigrated = $legacyMigrated -replace 'appearanceLightChromeTheme = \{ surface = "original" \}', 'appearanceLightChromeTheme = { surface = "user-edited" }'
   Write-DreamSkinUtf8FileAtomically -Path $legacyConfigPath -Content $legacyMigrated
+  $legacyUserEditedBytes = [System.IO.File]::ReadAllBytes($legacyConfigPath)
   Restore-DreamSkinBaseTheme -ConfigPath $legacyConfigPath -BackupPath $legacyBackupPath
-  if ((Read-DreamSkinUtf8File -Path $legacyConfigPath) -notmatch 'appearanceTheme = "dark"') {
-    throw 'A current install restore overwrote the user appearance after legacy migration.'
+  if (-not (Test-DreamSkinBytesEqual -Left $legacyUserEditedBytes `
+      -Right ([System.IO.File]::ReadAllBytes($legacyConfigPath)))) {
+    throw 'Restore overwrote user-edited values after legacy migration.'
+  }
+
+  $partialLegacyPath = Join-Path $temporaryRoot 'partial-legacy-light.toml'
+  $partialLegacyBackup = Join-Path $temporaryRoot 'partial-legacy-light.before.toml'
+  $partialLegacyCurrent = "[desktop]`r`nappearanceTheme = `"dark`"`r`n$($script:DreamSkinManagedLightCodeTheme)`r`n$($script:DreamSkinManagedLightChromeTheme)`r`n"
+  $partialLegacyOriginal = "[desktop]`r`nappearanceTheme = `"system`"`r`nappearanceLightCodeThemeId = `"theme-original`"`r`nappearanceLightChromeTheme = { surface = `"original`" }`r`n"
+  [System.IO.File]::WriteAllText($partialLegacyPath, $partialLegacyCurrent, $utf8NoBom)
+  [System.IO.File]::WriteAllText($partialLegacyBackup, $partialLegacyOriginal, $utf8NoBom)
+  Write-DreamSkinAppearanceMarker -BackupPath $partialLegacyBackup
+  Install-DreamSkinBaseTheme -ConfigPath $partialLegacyPath -BackupPath $partialLegacyBackup
+  $partialMigrated = Read-DreamSkinUtf8File -Path $partialLegacyPath
+  if ($partialMigrated -notmatch 'appearanceTheme = "dark"' -or
+    $partialMigrated -notmatch 'appearanceLightCodeThemeId = "theme-original"' -or
+    $partialMigrated -notmatch 'appearanceLightChromeTheme = \{ surface = "original" \}') {
+    throw 'Legacy code/chrome colors were not migrated independently of a user-customized appearance.'
+  }
+
+  $missingLegacyPath = Join-Path $temporaryRoot 'missing-legacy-light.toml'
+  $missingLegacyBackup = Join-Path $temporaryRoot 'missing-legacy-light.before.toml'
+  [System.IO.File]::WriteAllText($missingLegacyPath, $partialLegacyCurrent, $utf8NoBom)
+  [System.IO.File]::WriteAllText($missingLegacyBackup, "[desktop]`r`nappearanceTheme = `"system`"`r`n", $utf8NoBom)
+  Install-DreamSkinBaseTheme -ConfigPath $missingLegacyPath -BackupPath $missingLegacyBackup
+  $missingMigrated = Read-DreamSkinUtf8File -Path $missingLegacyPath
+  if ($missingMigrated.Contains($script:DreamSkinManagedLightCodeTheme) -or
+    $missingMigrated.Contains($script:DreamSkinManagedLightChromeTheme) -or
+    $missingMigrated -notmatch 'appearanceTheme = "dark"') {
+    throw 'Legacy managed code/chrome settings with no saved value were not removed safely.'
+  }
+
+  $emptyLegacyPath = Join-Path $temporaryRoot 'empty-legacy-desktop.toml'
+  $emptyLegacyBackup = Join-Path $temporaryRoot 'empty-legacy-desktop.before.toml'
+  $emptyLegacyOriginal = "model = `"gpt-5.4`"`r`n"
+  $emptyLegacyCurrent = $emptyLegacyOriginal + "[desktop]`r`n$($script:DreamSkinLegacyAppearanceTheme)`r`n$($script:DreamSkinManagedLightCodeTheme)`r`n$($script:DreamSkinManagedLightChromeTheme)`r`n"
+  [System.IO.File]::WriteAllText($emptyLegacyPath, $emptyLegacyCurrent, $utf8NoBom)
+  [System.IO.File]::WriteAllText($emptyLegacyBackup, $emptyLegacyOriginal, $utf8NoBom)
+  Write-DreamSkinAppearanceMarker -BackupPath $emptyLegacyBackup
+  Install-DreamSkinBaseTheme -ConfigPath $emptyLegacyPath -BackupPath $emptyLegacyBackup
+  if (-not (Test-DreamSkinBytesEqual -Left ([System.IO.File]::ReadAllBytes($emptyLegacyBackup)) `
+      -Right ([System.IO.File]::ReadAllBytes($emptyLegacyPath)))) {
+    throw 'Legacy migration left an empty desktop section that was absent from the saved config.'
   }
 
   $lfConfigPath = Join-Path $temporaryRoot 'config-lf.toml'
@@ -313,13 +362,13 @@ try {
   [System.IO.File]::WriteAllText($lfConfigPath, $lfOriginal, $utf8NoBom)
   Install-DreamSkinBaseTheme -ConfigPath $lfConfigPath -BackupPath $lfBackupPath
   $lfInstalled = Read-DreamSkinUtf8File -Path $lfConfigPath
-  if ($lfInstalled.Contains("`r") -or $lfInstalled -notmatch '(?m)^\[desktop\]$') {
-    throw 'Install did not preserve LF line endings or create the desktop section.'
+  if ($lfInstalled -cne $lfOriginal) {
+    throw 'Backup-only install changed LF content or created an unnecessary desktop section.'
   }
   Restore-DreamSkinBaseTheme -ConfigPath $lfConfigPath -BackupPath $lfBackupPath
   $lfRestored = Read-DreamSkinUtf8File -Path $lfConfigPath
-  if ($lfRestored.Contains("`r") -or $lfRestored -match '(?m)^\[desktop\]$' -or -not $lfRestored.Contains($projectName)) {
-    throw 'Restore did not preserve LF content or remove the generated empty desktop section.'
+  if ($lfRestored -cne $lfOriginal) {
+    throw 'Restore changed an untouched backup-only LF config.'
   }
 
   $quotedConfigPath = Join-Path $temporaryRoot 'config-quoted.toml'
@@ -343,16 +392,8 @@ try {
   [System.IO.File]::WriteAllText($nestedConfigPath, $nestedOriginal, $utf8NoBom)
   Install-DreamSkinBaseTheme -ConfigPath $nestedConfigPath -BackupPath $nestedBackupPath
   $nestedInstalled = Read-DreamSkinUtf8File -Path $nestedConfigPath
-  $nestedDesktop = Get-DreamSkinDesktopSection -Content $nestedInstalled
-  if (-not $nestedDesktop.Body.Contains('appearanceTheme = "system"') -or
-    -not $nestedDesktop.Body.Contains('appearanceLightCodeThemeId = "codex"')) {
-    throw 'Install did not update scalar appearance settings beside nested desktop theme tables.'
-  }
-  if ([regex]::IsMatch($nestedDesktop.Body, '(?m)^[\t ]*appearanceLightChromeTheme[\t ]*=')) {
-    throw 'Install wrote an inline light chrome theme beside the equivalent nested table.'
-  }
-  if (-not $nestedInstalled.Contains($nestedTables)) {
-    throw 'Install changed native Codex chrome theme or unrelated nested desktop tables.'
+  if ($nestedInstalled -cne $nestedOriginal) {
+    throw 'Backup-only install changed native Codex appearance or nested desktop theme tables.'
   }
   Restore-DreamSkinBaseTheme -ConfigPath $nestedConfigPath -BackupPath $nestedBackupPath
   if ((Read-DreamSkinUtf8File -Path $nestedConfigPath) -cne $nestedOriginal) {
@@ -763,7 +804,8 @@ try {
     '[class*="text-token"]',
     'background: color-mix(in oklab, var(--dream-surface) 54%, transparent) !important',
     'bg-token-main-surface-primary',
-    'color-mix(in oklab, var(--dream-surface) 72%, transparent)',
+    '[class~="main-surface"][class~="h-full"][class~="min-h-0"][class~="flex-col"]',
+    'background: transparent !important',
     'text-token-text-secondary'
   )) {
     if (-not $css.Contains($requiredCss)) { throw "Windows immersive CSS is missing: $requiredCss" }
