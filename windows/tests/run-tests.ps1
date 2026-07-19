@@ -14,7 +14,7 @@ try {
   $runtimeSourceRoot = Join-Path $temporaryRoot $runtimeSourceName
   $runtimeStateRoot = Join-Path $temporaryRoot 'runtime-state'
   New-Item -ItemType Directory -Path $runtimeSourceRoot | Out-Null
-  foreach ($directoryName in @('assets', 'scripts')) {
+  foreach ($directoryName in @('assets', 'scripts', 'presets')) {
     Copy-Item -LiteralPath (Join-Path $Root $directoryName) -Destination $runtimeSourceRoot `
       -Recurse -Force -ErrorAction Stop
   }
@@ -28,11 +28,11 @@ try {
   $engine = Install-DreamSkinRuntimeEngine -SkillRoot $runtimeSourceRoot -StateRoot $runtimeStateRoot
   $sourcePrefix = $runtimeSourceRoot.TrimEnd('\') + '\'
   $runtimeSourceFiles = @(
-    Get-ChildItem -LiteralPath (Join-Path $runtimeSourceRoot 'assets'), (Join-Path $runtimeSourceRoot 'scripts') `
+    Get-ChildItem -LiteralPath (Join-Path $runtimeSourceRoot 'assets'), (Join-Path $runtimeSourceRoot 'scripts'), (Join-Path $runtimeSourceRoot 'presets') `
       -Recurse -File -Force
   )
   $runtimeEngineFiles = @(
-    Get-ChildItem -LiteralPath (Join-Path $engine.Root 'assets'), (Join-Path $engine.Root 'scripts') `
+    Get-ChildItem -LiteralPath (Join-Path $engine.Root 'assets'), (Join-Path $engine.Root 'scripts'), (Join-Path $engine.Root 'presets') `
       -Recurse -File -Force
   )
   if ($runtimeSourceFiles.Count -ne $runtimeEngineFiles.Count -or
@@ -654,10 +654,15 @@ try {
     throw 'Default Windows theme did not seed the Arina Hashimoto wallpaper contract.'
   }
   $preseededThemes = @(Get-DreamSkinSavedThemes -StateRoot $themeStateRoot)
-  if ($preseededThemes.Count -ne 1 -or
-    $preseededThemes[0].Id -cne 'preset-arina-hashimoto' -or
-    $preseededThemes[0].Name -cne '桥本有菜') {
-    throw 'Arina Hashimoto was not preseeded in the Windows saved-theme menu.'
+  $preseededIds = @($preseededThemes | ForEach-Object { $_.Id })
+  if ($preseededThemes.Count -lt 2 -or
+    $preseededIds -notcontains 'preset-arina-hashimoto' -or
+    $preseededIds -notcontains 'preset-gothic-void-crusade') {
+    throw 'Windows did not preseed both Arina Hashimoto and Gothic Void Crusade.'
+  }
+  $gothicSeed = $preseededThemes | Where-Object { $_.Id -ceq 'preset-gothic-void-crusade' } | Select-Object -First 1
+  if ($null -eq $gothicSeed -or $gothicSeed.Name -cne 'Gothic Void Crusade') {
+    throw 'Gothic Void Crusade was not preseeded with the expected display name.'
   }
   $updatedTheme = Set-DreamSkinActiveTheme -ImagePath (Join-Path $Root 'assets\dream-reference.jpg') `
     -Theme $null -Name '测试主题' -StateRoot $themeStateRoot
@@ -670,12 +675,12 @@ try {
   }
   $null = Initialize-DreamSkinThemeStore -SkillRoot $Root -StateRoot $themeStateRoot
   $idempotentTheme = Read-DreamSkinTheme -ThemeDirectory $themePaths.Active
-  if ($idempotentTheme.Theme.id -cne 'custom' -or
-    @(Get-DreamSkinSavedThemes -StateRoot $themeStateRoot).Count -ne 1) {
-    throw 'Theme-store initialization overwrote the active custom theme or duplicated its bundled preset.'
+  $afterReinitCount = @(Get-DreamSkinSavedThemes -StateRoot $themeStateRoot).Count
+  if ($idempotentTheme.Theme.id -cne 'custom' -or $afterReinitCount -ne 2) {
+    throw 'Theme-store initialization overwrote the active custom theme or duplicated its bundled presets.'
   }
   $savedTheme = Save-DreamSkinCurrentTheme -Name '已保存主题' -StateRoot $themeStateRoot
-  if ($savedTheme.Theme.name -cne '已保存主题' -or @(Get-DreamSkinSavedThemes -StateRoot $themeStateRoot).Count -ne 2) {
+  if ($savedTheme.Theme.name -cne '已保存主题' -or @(Get-DreamSkinSavedThemes -StateRoot $themeStateRoot).Count -ne 3) {
     throw 'Saved theme creation or discovery failed.'
   }
   $null = Use-DreamSkinSavedTheme -ThemeDirectory $savedTheme.Directory -StateRoot $themeStateRoot

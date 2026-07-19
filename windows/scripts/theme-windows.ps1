@@ -219,6 +219,7 @@ function Initialize-DreamSkinThemeStore {
   if (Test-Path -LiteralPath $retiredPresetDirectory) {
     Remove-Item -LiteralPath $retiredPresetDirectory -Recurse -Force
   }
+  # Bundled Arina Hashimoto (default active wallpaper lives under assets/).
   $presetDirectory = Join-Path $paths.Saved 'preset-arina-hashimoto'
   $presetTheme = Join-Path $presetDirectory 'theme.json'
   Assert-DreamSkinNoReparseComponents -Path $presetDirectory
@@ -233,6 +234,27 @@ function Initialize-DreamSkinThemeStore {
     Assert-DreamSkinImageFile -Path $presetImage
     Assert-DreamSkinNoReparseComponents -Path $presetTheme
     Copy-Item -LiteralPath (Join-Path $assetRoot 'theme.json') -Destination $presetTheme -Force
+  }
+  # Bundled Gothic Void Crusade (same pack as macOS presets/).
+  $gothicSource = Join-Path $SkillRoot 'presets\preset-gothic-void-crusade'
+  $gothicDirectory = Join-Path $paths.Saved 'preset-gothic-void-crusade'
+  $gothicTheme = Join-Path $gothicDirectory 'theme.json'
+  $gothicSourceTheme = Join-Path $gothicSource 'theme.json'
+  $gothicSourceImage = Join-Path $gothicSource 'background.jpg'
+  Assert-DreamSkinNoReparseComponents -Path $gothicDirectory
+  Assert-DreamSkinNoReparseComponents -Path $gothicTheme
+  if ((Test-Path -LiteralPath $gothicSourceTheme -PathType Leaf) -and
+    (Test-Path -LiteralPath $gothicSourceImage -PathType Leaf) -and
+    -not (Test-Path -LiteralPath $gothicTheme -PathType Leaf)) {
+    Ensure-DreamSkinManagedDirectory -Path $gothicDirectory -Root $paths.Root
+    $gothicImage = Join-Path $gothicDirectory 'background.jpg'
+    Assert-DreamSkinNoReparseComponents -Path $gothicImage
+    Assert-DreamSkinImageFile -Path $gothicSourceImage
+    Copy-Item -LiteralPath $gothicSourceImage -Destination $gothicImage -Force
+    Assert-DreamSkinNoReparseComponents -Path $gothicImage
+    Assert-DreamSkinImageFile -Path $gothicImage
+    Assert-DreamSkinNoReparseComponents -Path $gothicTheme
+    Copy-Item -LiteralPath $gothicSourceTheme -Destination $gothicTheme -Force
   }
   $null = Read-DreamSkinTheme -ThemeDirectory $paths.Active
   return $paths
