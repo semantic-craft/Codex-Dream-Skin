@@ -91,7 +91,7 @@ if ($uninstallStepIndex -lt 0 -or $runBootstrapIndex -le $uninstallStepIndex -or
   throw 'Uninstall restoration must run after confirmation and abort before file deletion on failure.'
 }
 if ([regex]::Matches($definition, '(?m)^Name: "startup";').Count -ne 1 -or
-  [regex]::Matches($definition, '(?m)^Name: "startup";.*Flags: unchecked$').Count -ne 1) {
+  [regex]::Matches($definition, '(?m)^Name: "startup";[^\r\n]*Flags: unchecked\r?$').Count -ne 1) {
   throw 'The installer startup task must exist exactly once and remain unchecked by default.'
 }
 $fileSources = [regex]::Matches($definition, '(?m)^Source: .*$')
