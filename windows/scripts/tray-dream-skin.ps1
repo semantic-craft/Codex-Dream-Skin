@@ -86,12 +86,35 @@ try {
       Set-DreamSkinPaused -Paused $false -StateRoot $StateRoot | Out-Null
       Start-DreamSkinPowerShell -Script $startScript -Arguments @('-Port', "$Port", '-PromptRestart')
     }
-    $pauseText = if ($paused) { '继续显示皮肤' } else { '暂停皮肤' }
-    $nextPaused = -not $paused
-    $pauseAction = {
-      Set-DreamSkinPaused -Paused $nextPaused -StateRoot $StateRoot | Out-Null
-    }.GetNewClosure()
-    $null = Add-DreamSkinTrayItem -Items $menu.Items -Text $pauseText -Action $pauseAction
+    # Match macOS menubar: pause = mark + live remove; resume = clear pause + re-apply.
+    if ($paused) {
+      $null = Add-DreamSkinTrayItem -Items $menu.Items -Text '继续显示皮肤' -Action {
+        Set-DreamSkinPaused -Paused $false -StateRoot $StateRoot | Out-Null
+        Start-DreamSkinPowerShell -Script $startScript -Arguments @('-Port', "$Port", '-PromptRestart')
+        $notify.ShowBalloonTip(
+          1800,
+          'Codex Dream Skin',
+          '正在重新应用皮肤…',
+          [System.Windows.Forms.ToolTipIcon]::Info
+        )
+      }
+    } else {
+      $null = Add-DreamSkinTrayItem -Items $menu.Items -Text '暂停皮肤' -Action {
+        Set-DreamSkinPaused -Paused $true -StateRoot $StateRoot | Out-Null
+        $removal = Invoke-DreamSkinLiveRemove -StateRoot $StateRoot
+        $icon = if ($removal.Removed) {
+          [System.Windows.Forms.ToolTipIcon]::Info
+        } elseif ($removal.Attempted) {
+          [System.Windows.Forms.ToolTipIcon]::Warning
+        } else {
+          [System.Windows.Forms.ToolTipIcon]::Warning
+        }
+        $notify.ShowBalloonTip(2800, 'Codex Dream Skin', $removal.Message, $icon)
+        if (-not $removal.Removed -and $removal.Attempted) {
+          Show-DreamSkinTrayError -Message $removal.Message
+        }
+      }
+    }
     $null = Add-DreamSkinTrayItem -Items $menu.Items -Text '更换背景图' -Action {
       $dialog = [System.Windows.Forms.OpenFileDialog]::new()
       $dialog.Title = '选择 Codex Dream Skin 背景图'

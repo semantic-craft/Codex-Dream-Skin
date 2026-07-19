@@ -401,3 +401,87 @@ function Test-DreamSkinPaused {
   param([string]$StateRoot = (Join-Path $env:LOCALAPPDATA 'CodexDreamSkin'))
   return (Test-Path -LiteralPath (Get-DreamSkinThemePaths -StateRoot $StateRoot).PauseFile -PathType Leaf)
 }
+
+# Mirror macOS pause: mark paused, then immediately strip the live skin over CDP.
+# Writing only the pause file leaves CSS in the renderer until the watcher polls.
+function Invoke-DreamSkinLiveRemove {
+  param(
+    [string]$StateRoot = (Join-Path $env:LOCALAPPDATA 'CodexDreamSkin'),
+    [int]$TimeoutMs = 8000
+  )
+  if ($TimeoutMs -lt 250 -or $TimeoutMs -gt 120000) {
+    throw "Invalid live-remove timeout: $TimeoutMs"
+  }
+  $paths = Get-DreamSkinThemePaths -StateRoot $StateRoot
+  $state = $null
+  try { $state = Read-DreamSkinState -Path $paths.State } catch { $state = $null }
+  if ($null -eq $state -or -not $state.port -or -not $state.browserId) {
+    return [pscustomobject]@{
+      Attempted = $false
+      Removed = $false
+      Message = '没有可连接的活动会话；已记录暂停，当前窗口可能仍显示皮肤。'
+    }
+  }
+
+  $port = 0
+  if (-not [int]::TryParse("$($state.port)", [ref]$port)) {
+    return [pscustomobject]@{
+      Attempted = $false
+      Removed = $false
+      Message = '状态文件中的端口无效；已记录暂停，但未能卸下当前皮肤。'
+    }
+  }
+  Assert-DreamSkinPort -Port $port
+  $browserId = "$($state.browserId)".Trim()
+  if (-not (Test-DreamSkinBrowserId -Value $browserId)) {
+    return [pscustomobject]@{
+      Attempted = $false
+      Removed = $false
+      Message = '状态文件中的 Browser ID 无效；已记录暂停，但未能卸下当前皮肤。'
+    }
+  }
+
+  if (-not (Get-Command Get-DreamSkinNodeRuntime -ErrorAction SilentlyContinue) -or
+    -not (Get-Command Invoke-DreamSkinNative -ErrorAction SilentlyContinue)) {
+    return [pscustomobject]@{
+      Attempted = $false
+      Removed = $false
+      Message = 'Node 运行时不可用；已记录暂停，但未能卸下当前皮肤。'
+    }
+  }
+
+  $node = Get-DreamSkinNodeRuntime
+  $injector = Join-Path $PSScriptRoot 'injector.mjs'
+  if (-not (Test-Path -LiteralPath $injector)) {
+    return [pscustomobject]@{
+      Attempted = $false
+      Removed = $false
+      Message = '找不到 injector；已记录暂停，但未能卸下当前皮肤。'
+    }
+  }
+
+  $argumentList = @(
+    $injector,
+    '--remove',
+    '--port', "$port",
+    '--browser-id', $browserId,
+    '--timeout-ms', "$TimeoutMs"
+  )
+  if (Test-Path -LiteralPath $paths.Active) {
+    $argumentList += @('--theme-dir', $paths.Active)
+  }
+
+  $removal = Invoke-DreamSkinNative -FilePath $node.Path -ArgumentList $argumentList -DiscardStderr
+  if ($removal.ExitCode -eq 0) {
+    return [pscustomobject]@{
+      Attempted = $true
+      Removed = $true
+      Message = '皮肤已从当前窗口移除。'
+    }
+  }
+  return [pscustomobject]@{
+    Attempted = $true
+    Removed = $false
+    Message = '已记录暂停，但卸下当前皮肤失败；可重试暂停或完全恢复。'
+  }
+}

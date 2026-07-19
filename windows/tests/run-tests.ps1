@@ -756,11 +756,25 @@ try {
     if (-not $css.Contains($requiredCss)) { throw "Windows immersive CSS is missing: $requiredCss" }
   }
   $traySource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\tray-dream-skin.ps1')
-  foreach ($requiredTrayAction in @('System.Windows.Forms.NotifyIcon', '暂停皮肤', '更换背景图', '已保存主题', '完全恢复 Codex')) {
+  foreach ($requiredTrayAction in @('System.Windows.Forms.NotifyIcon', '暂停皮肤', '继续显示皮肤', '更换背景图', '已保存主题', '完全恢复 Codex')) {
     if (-not $traySource.Contains($requiredTrayAction)) { throw "Tray action is missing: $requiredTrayAction" }
   }
-  if (-not $traySource.Contains('$nextPaused') -or -not $traySource.Contains('[System.Windows.Forms.Application]::Exit()')) {
-    throw 'Tray pause/restore closures do not terminate cleanly.'
+  if (-not $traySource.Contains('Invoke-DreamSkinLiveRemove') -or
+    -not $traySource.Contains("Set-DreamSkinPaused -Paused `$true") -or
+    -not $traySource.Contains("Set-DreamSkinPaused -Paused `$false") -or
+    -not $traySource.Contains('[System.Windows.Forms.Application]::Exit()')) {
+    throw 'Tray pause/resume no longer mirrors macOS live-remove and re-apply semantics.'
+  }
+  $themeWindowsSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\theme-windows.ps1')
+  foreach ($requiredLiveRemoveToken in @(
+    'function Invoke-DreamSkinLiveRemove',
+    "'--remove'",
+    "'--browser-id'",
+    'Invoke-DreamSkinNative'
+  )) {
+    if (-not $themeWindowsSource.Contains($requiredLiveRemoveToken)) {
+      throw "Live remove helper is missing required token: $requiredLiveRemoveToken"
+    }
   }
   if ([regex]::Matches($traySource, '-ExecutionPolicy RemoteSigned').Count -ne 1 -or
     $traySource.Contains('-ExecutionPolicy Bypass')) {
