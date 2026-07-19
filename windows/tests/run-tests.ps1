@@ -332,7 +332,7 @@ try {
   $realAtomicBytesWriter = (Get-Command Write-DreamSkinBytesAtomically -CommandType Function).ScriptBlock
   $legacyCommitFailureConfig = Join-Path $temporaryRoot 'legacy-commit-failure.toml'
   $legacyCommitFailureBackup = Join-Path $temporaryRoot 'legacy-commit-failure.before.toml'
-  $legacyOriginal = "model = `"gpt-5`"`r`n`r`n[desktop]`r`nappearanceTheme = `"light`"`r`nappearanceLightCodeThemeId = `"codex`"`r`nappearanceLightChromeTheme = `"light`"`r`n"
+  $legacyOriginal = "model = `"gpt-5`"`r`n`r`n[desktop]`r`n$($script:DreamSkinLegacyAppearanceTheme)`r`n$($script:DreamSkinManagedLightCodeTheme)`r`n$($script:DreamSkinManagedLightChromeTheme)`r`n"
   $legacyBackup = "model = `"gpt-5`"`r`n`r`n[desktop]`r`nappearanceTheme = `"system`"`r`n"
   [System.IO.File]::WriteAllText(
     $legacyCommitFailureConfig,
