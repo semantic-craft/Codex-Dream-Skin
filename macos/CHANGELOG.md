@@ -5,6 +5,9 @@
 ### 修复
 
 - Gothic Void Crusade 预设的 `appearance` 从 `auto` 固定为 `dark`（#134 引入时误用了 auto）：这张暗色专属背景在浅色外壳下会与 Codex 原生浅色组件（差异卡片、任务条等）互相打架。已在用该预设的用户需重新切换一次该主题才会拿到修复。
+- Pull Requests 等新版工具路由的右侧详情面板不再保留原生整块底色：新版 Codex 用 `bg-token-main-surface-primary` 的 `section/div` 面板取代了 `[role="main"]`，旧透明化规则匹配不到，导致整窗背景图被右侧面板盖死。
+- 恢复 0437e18（adaptive full-window skins）误删的首页口号与主题名：右下角 `.dream-skin-quote`（读取主题 `quote` 字段，可自定义）重新在首页显示，标题上方恢复 `--dream-skin-name` 主题名眉标；配色从旧版写死的荧光绿改为跟随当前主题强调色，窄屏（≤1120px）自动隐藏口号，浅色外壳下去除辉光。
+- 修复注入器 home 检测兜底选择器 `.group\/home-suggestions` 被双重转义、永远匹配不到的问题（此前仅靠 `home-icon` 检测兜底才未出错）。
 
 ### 改进
 
