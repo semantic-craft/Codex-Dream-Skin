@@ -192,6 +192,7 @@ exit 0
 `, { mode: 0o700 });
   await fs.writeFile(mockCommon, `#!/bin/bash
 CODEX_BUNDLE="/Applications/ChatGPT.app"
+SKIN_VERSION="test-version"
 STATE_ROOT="$FIXTURE_ROOT/state"
 STATE_PATH="$STATE_ROOT/state.json"
 START_ERROR_LOG="$FIXTURE_ROOT/start-error.log"
