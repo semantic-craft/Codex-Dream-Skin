@@ -1,6 +1,6 @@
 # Task Progress
 
-Updated: 2026-07-25 08:28 HKT (Asia/Hong_Kong)
+Updated: 2026-07-25 08:31 HKT (Asia/Hong_Kong)
 
 ## v1.5.1 Version Release (2026-07-25 08:28 HKT)
 
@@ -19,9 +19,14 @@ Updated: 2026-07-25 08:28 HKT (Asia/Hong_Kong)
   injector payload checks, 21 macOS and 11 Windows portable Node regressions,
   and `git diff --check` pass locally. The Windows suite was rerun after the
   fixture correction and passed all 11 tests.
-- [in progress] Commit and push the isolated version branch, open a ready PR
-  against `main`, require Static checks, Windows PowerShell 5.1, PowerShell 7,
-  and macOS repository regressions, then squash-merge only after all four pass.
+- [complete] Release commit `3289f64` is pushed to
+  `codex/release-v1.5.1`; ready PR #250 targets `main` with that exact head.
+- [verified] Initial CI run `30136427124` passed Static checks; both Windows
+  suites passed their regressions/static checks and macOS passed regressions
+  plus its native build before the required durable-progress checkpoint.
+- [in progress] Push this progress-only docs commit to PR #250, then require a
+  fresh Static checks, Windows PowerShell 5.1, PowerShell 7, and macOS run for
+  the new exact head. The superseded CI head is not merge evidence.
 - [pending] After merge, verify the automatic Release workflow creates a
   `v1.5.1` tag at the exact merge commit and publishes non-empty DMG, Setup.exe,
   and `SHA256SUMS.txt` assets. No manual package, tag, or Release publication is
